@@ -187,13 +187,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         reply = generate_reply(user_id, user_message)
-    except Exception:
+    except Exception as e:
         logger.exception("Gemini generation failed")
-        reply = (
-            "Sorry, I'm having trouble thinking that through right now — "
-            "give me a moment and try again?"
-        )
-        await update.message.reply_text(reply)
+        # TEMPORARY: show the real error in chat so we can debug it.
+        await update.message.reply_text(f"[DEBUG ERROR] {type(e).__name__}: {e}")
         return
 
     save_message(user_id, "user", user_message)
