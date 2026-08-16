@@ -1,25 +1,21 @@
-# Jose Alvarez — Relationship Advice Bot
+# Jose Alvarez — Relationship Advice Bot (Simple Version)
 
-A Telegram bot that chats warmly with people about their relationship, family,
-friendship, and work problems, and gives practical advice. Remembers each
-user's conversation history so it can refer back to earlier context.
+A Telegram bot that helps people think through relationship, family,
+friendship, and work problems — using a simple button menu, no external AI
+API. Pick a topic, pick a situation, get practical advice.
 
 ## Stack
-- **python-telegram-bot** — Telegram integration
-- **Google Gemini (`gemini-2.0-flash`)** — free-tier conversational AI
-- **SQLite** — per-user conversation memory
+- **python-telegram-bot** only — no Gemini, no OpenAI, no database
 
-## 1. Get your API keys
+## 1. Get your API key
 
-**Telegram bot token**
+You only need **one** thing: a Telegram bot token.
+
 1. Message [@BotFather](https://t.me/BotFather) on Telegram
-2. `/newbot`, follow the prompts
+2. `/newbot`, follow the prompts (choose a name and a username ending in "bot")
 3. Copy the token it gives you
 
-**Gemini API key (free)**
-1. Go to https://aistudio.google.com/app/apikey
-2. Create an API key (free tier — generous daily limits, no card required)
-3. Copy the key
+That's it — no other keys or accounts required.
 
 ## 2. Local setup
 
@@ -27,59 +23,49 @@ user's conversation history so it can refer back to earlier context.
 git clone <your-repo-url>
 cd jose-alvarez-bot
 pip install -r requirements.txt
-cp .env.example .env   # then fill in your actual keys
+cp .env.example .env   # then paste in your actual token
 ```
 
-Load the `.env` file however you prefer (e.g. `python-dotenv`, or just
-`export $(cat .env | xargs)` on Mac/Linux before running).
+Load the `.env` file however you prefer, then run:
 
 ```bash
 python bot.py
 ```
 
-Message your bot on Telegram — send `/start` to see the welcome message.
+Message your bot on Telegram — send `/start` to see the menu.
 
 ## 3. Deploy on Railway
 
 1. Push this repo to GitHub
 2. In Railway: **New Project → Deploy from GitHub repo**
-3. Add environment variables in Railway's dashboard:
+3. Add one environment variable in Railway's dashboard:
    - `TELEGRAM_BOT_TOKEN`
-   - `GEMINI_API_KEY`
 4. Railway auto-detects Python and installs `requirements.txt`. Set the
    **start command** to `python bot.py` if it isn't picked up automatically.
 
-### ⚠️ Important: persistent memory on Railway
+No volumes, no database, no persistence to worry about — this version has
+no memory between messages, so there's nothing that can get wiped on
+redeploy.
 
-Railway's default filesystem is **ephemeral** — it resets every time you
-redeploy, which means the SQLite database (and everyone's conversation
-history) gets wiped. To keep memory persistent across deploys:
+## How it works
 
-1. In your Railway service, go to **Settings → Volumes**
-2. Add a volume, mount it at e.g. `/data`
-3. Set the `DB_PATH` environment variable to `/data/jose_memory.db`
+- `/start` shows the main topic menu (Romance / Family / Friendship / Work)
+- Tapping a topic shows a sub-menu of common situations
+- Tapping a situation shows Jose's advice for that specific thing, plus a
+  "Back" button to pick something else
 
-Without this step, the bot still works fine — it just "forgets" everyone
-whenever you push a new update.
+## Customizing the content
 
-## Commands
-- `/start` — welcome message
-- `/reset` — wipes that user's conversation history (fresh start)
-- Any other text — Jose responds in character
+Everything lives in the `TOPICS` dictionary in `bot.py`. Each topic has a
+`label` and a set of `situations`; each situation has a `label` (the button
+text) and a `text` (the advice shown). Add, remove, or edit entries there —
+no other code changes needed.
 
-## Customizing the persona
+## ⚠️ One thing to check before you redeploy
 
-Edit the `SYSTEM_PROMPT` constant in `bot.py`. That's the entire personality —
-tone, how much it asks vs. advises, safety guardrails around abuse/crisis
-situations, etc. Keep the safety-related lines (about not diagnosing, and
-pointing people toward real support in crisis situations) — those matter for
-a bot handling sensitive personal topics.
-
-## Notes on scaling advice quality
-
-- `MAX_HISTORY_MESSAGES` in `bot.py` controls how many past messages get sent
-  back to Gemini as context per reply. Raise it if you want Jose to remember
-  further back, at the cost of slightly higher latency/token use per message.
-- Gemini's free tier has rate limits (requests per minute/day). If you expect
-  heavy usage, check current limits at https://ai.google.dev/pricing before
-  launch.
+If you ever ran an earlier/different version of this bot (or a different
+project) using the **same Telegram bot token**, make sure that other process
+is fully stopped — whether it's running locally on your computer or as a
+separate Railway service. Two programs polling the same token at once causes
+replies to randomly come from whichever one Telegram hands the message to,
+which looks like the bot "glitching" between two different personalities.
