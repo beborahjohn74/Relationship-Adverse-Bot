@@ -42,7 +42,7 @@ DB_PATH = os.environ.get("DB_PATH", "jose_memory.db")
 MAX_HISTORY_MESSAGES = 20
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
+model = genai.GenerativeModel("gemini-flash-latest")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -187,10 +187,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         reply = generate_reply(user_id, user_message)
-    except Exception as e:
+    except Exception:
         logger.exception("Gemini generation failed")
-        # TEMPORARY: show the real error in chat so we can debug it.
-        await update.message.reply_text(f"[DEBUG ERROR] {type(e).__name__}: {e}")
+        reply = (
+            "Sorry, I'm having trouble thinking that through right now — "
+            "give me a moment and try again?"
+        )
+        await update.message.reply_text(reply)
         return
 
     save_message(user_id, "user", user_message)
