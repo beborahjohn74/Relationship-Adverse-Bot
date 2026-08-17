@@ -1,21 +1,28 @@
-# Jose Alvarez — Relationship Advice Bot (Simple Version)
+# Jose Alvarez — Relationship Advice Bot (Hybrid Version)
 
-A Telegram bot that helps people think through relationship, family,
-friendship, and work problems — using a simple button menu, no external AI
-API. Pick a topic, pick a situation, get practical advice.
+Pick a topic from a button menu (Romance / Family / Friendship), then chat
+normally — Jose listens, asks follow-up questions, and gives real, practical
+advice using AI, focused on the topic you picked.
 
 ## Stack
-- **python-telegram-bot** only — no Gemini, no OpenAI, no database
+- **python-telegram-bot** — Telegram integration
+- **Google Gemini (`gemini-flash-latest`)** — free-tier conversational AI
+- Conversation history is kept in memory per user while the bot is running
+  (no database) — restarting the bot clears it.
 
-## 1. Get your API key
+## 1. Get your API keys
 
-You only need **one** thing: a Telegram bot token.
-
+**Telegram bot token**
 1. Message [@BotFather](https://t.me/BotFather) on Telegram
-2. `/newbot`, follow the prompts (choose a name and a username ending in "bot")
+2. `/newbot`, follow the prompts
 3. Copy the token it gives you
 
-That's it — no other keys or accounts required.
+**Gemini API key (free)**
+1. Go to https://aistudio.google.com/app/apikey
+2. If it fails to auto-create a project, create one manually first at
+   https://console.cloud.google.com/projectcreate, then go back and choose
+   "Create API key in existing project"
+3. Copy the key
 
 ## 2. Local setup
 
@@ -23,49 +30,42 @@ That's it — no other keys or accounts required.
 git clone <your-repo-url>
 cd jose-alvarez-bot
 pip install -r requirements.txt
-cp .env.example .env   # then paste in your actual token
-```
-
-Load the `.env` file however you prefer, then run:
-
-```bash
+cp .env.example .env   # then fill in your actual keys
 python bot.py
 ```
 
-Message your bot on Telegram — send `/start` to see the menu.
+Message your bot on Telegram — send `/start` to see the topic menu.
 
 ## 3. Deploy on Railway
 
 1. Push this repo to GitHub
 2. In Railway: **New Project → Deploy from GitHub repo**
-3. Add one environment variable in Railway's dashboard:
+3. Add environment variables:
    - `TELEGRAM_BOT_TOKEN`
-4. Railway auto-detects Python and installs `requirements.txt`. Set the
-   **start command** to `python bot.py` if it isn't picked up automatically.
-
-No volumes, no database, no persistence to worry about — this version has
-no memory between messages, so there's nothing that can get wiped on
-redeploy.
+   - `GEMINI_API_KEY`
+4. Set the start command to `python bot.py` if not auto-detected.
 
 ## How it works
 
-- `/start` shows the main topic menu (Romance / Family / Friendship / Work)
-- Tapping a topic shows a sub-menu of common situations
-- Tapping a situation shows Jose's advice for that specific thing, plus a
-  "Back" button to pick something else
+- `/start` shows the topic menu
+- Tapping a topic (e.g. "Romance") tells Jose what kind of relationship
+  you're here to talk about
+- From then on, just type normally — Jose responds in character, asking
+  questions and giving advice
+- `/reset` clears the conversation and shows the menu again
 
-## Customizing the content
+## ⚠️ Avoiding duplicate-bot conflicts
 
-Everything lives in the `TOPICS` dictionary in `bot.py`. Each topic has a
-`label` and a set of `situations`; each situation has a `label` (the button
-text) and a `text` (the advice shown). Add, remove, or edit entries there —
-no other code changes needed.
+If you ever ran a different/older version of this bot with the **same
+Telegram bot token** — locally on your computer, or as a separate Railway
+service — stop that other process before testing. Two programs polling the
+same token at once causes replies to randomly come from whichever one
+Telegram hands the message to, which looks like the bot glitching between
+different personalities.
 
-## ⚠️ One thing to check before you redeploy
+## Model name note
 
-If you ever ran an earlier/different version of this bot (or a different
-project) using the **same Telegram bot token**, make sure that other process
-is fully stopped — whether it's running locally on your computer or as a
-separate Railway service. Two programs polling the same token at once causes
-replies to randomly come from whichever one Telegram hands the message to,
-which looks like the bot "glitching" between two different personalities.
+`gemini-flash-latest` is an alias Google maintains to always point at their
+current stable Flash model, so this should keep working even as Google
+retires specific dated model versions (which has happened before with
+hardcoded names like `gemini-2.0-flash`).
