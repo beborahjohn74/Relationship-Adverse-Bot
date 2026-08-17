@@ -1,4 +1,4 @@
-# Jose Alvarez — Relationship Advice Bot (Hybrid Version)
+# Jose Alvarez — Relationship Advice Bot (Groq Version)
 
 Pick a topic from a button menu (Romance / Family / Friendship), then chat
 normally — Jose listens, asks follow-up questions, and gives real, practical
@@ -6,9 +6,16 @@ advice using AI, focused on the topic you picked.
 
 ## Stack
 - **python-telegram-bot** — Telegram integration
-- **Google Gemini (`gemini-flash-latest`)** — free-tier conversational AI
+- **Groq API (`openai/gpt-oss-120b`)** — free-tier conversational AI
 - Conversation history is kept in memory per user while the bot is running
   (no database) — restarting the bot clears it.
+
+## Why Groq instead of Gemini
+
+Gemini's free tier caps out at only ~20 requests per day per model — fine
+for solo testing, not enough for real users. Groq's free tier is far more
+generous (tens of thousands of requests/day range), with no card required,
+so it actually supports many people using the bot in a day.
 
 ## 1. Get your API keys
 
@@ -17,12 +24,11 @@ advice using AI, focused on the topic you picked.
 2. `/newbot`, follow the prompts
 3. Copy the token it gives you
 
-**Gemini API key (free)**
-1. Go to https://aistudio.google.com/app/apikey
-2. If it fails to auto-create a project, create one manually first at
-   https://console.cloud.google.com/projectcreate, then go back and choose
-   "Create API key in existing project"
-3. Copy the key
+**Groq API key (free)**
+1. Go to https://console.groq.com
+2. Sign up / log in (no card required)
+3. Go to API Keys → Create API Key
+4. Copy the key
 
 ## 2. Local setup
 
@@ -42,8 +48,11 @@ Message your bot on Telegram — send `/start` to see the topic menu.
 2. In Railway: **New Project → Deploy from GitHub repo**
 3. Add environment variables:
    - `TELEGRAM_BOT_TOKEN`
-   - `GEMINI_API_KEY`
+   - `GROQ_API_KEY`
 4. Set the start command to `python bot.py` if not auto-detected.
+5. **Important:** after adding/changing variables, make sure Railway actually
+   redeploys — check the Deployments tab shows a fresh deploy timestamp, not
+   an older one that predates the variable.
 
 ## How it works
 
@@ -56,16 +65,18 @@ Message your bot on Telegram — send `/start` to see the topic menu.
 
 ## ⚠️ Avoiding duplicate-bot conflicts
 
-If you ever ran a different/older version of this bot with the **same
-Telegram bot token** — locally on your computer, or as a separate Railway
-service — stop that other process before testing. Two programs polling the
+If you ever run a different/older version of this bot with the **same
+Telegram bot token** — on a different Railway account, locally, or anywhere
+else — stop that other process before testing. Two programs polling the
 same token at once causes replies to randomly come from whichever one
 Telegram hands the message to, which looks like the bot glitching between
-different personalities.
+different personalities. (This happened once already — an old deployment on
+a first Railway account kept running after switching to a second account.)
 
 ## Model name note
 
-`gemini-flash-latest` is an alias Google maintains to always point at their
-current stable Flash model, so this should keep working even as Google
-retires specific dated model versions (which has happened before with
-hardcoded names like `gemini-2.0-flash`).
+Groq occasionally deprecates specific model versions (this happened to
+`llama-3.3-70b-versatile`, which this bot used to use). If you start seeing
+errors mentioning a model name, check
+https://console.groq.com/docs/models for Groq's current recommended model
+and update the `GROQ_MODEL` constant in `bot.py`.
