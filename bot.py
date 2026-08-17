@@ -1,19 +1,24 @@
 """
-Jose Alvarez — Relationship & Life Advice Telegram Bot (Hybrid Version)
+Jose Alvarez — Relationship & Life Advice Telegram Bot (Groq Version)
 --------------------------------------------------------------------------
 Flow:
 1. /start shows a topic menu: Romance, Family, Friendship.
 2. Person taps a topic.
 3. From then on, they type normally, and Jose has a real conversation with
    them about it — asking follow-up questions, listening, and giving
-   practical advice — using Google Gemini (free tier).
+   practical advice — using the Groq API (free tier).
+
+Switched from Gemini to Groq because Gemini's free tier caps out at only
+~20 requests/day per model, which isn't enough for real usage with multiple
+people. Groq's free tier is far more generous (tens of thousands of
+requests/day range), with no card required.
 
 Conversation history is kept in memory per user for the running process
 (not persisted to disk/database) so Jose remembers context within a session.
 
 Stack:
 - python-telegram-bot (Telegram integration)
-- Google Gemini API (free tier) for conversation
+- Groq API (free tier) for conversation
 
 Deploy target: Railway
 """
@@ -31,19 +36,20 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-import google.generativeai as genai
+from groq import Groq
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GROQ_API_KEY = os.environ["GROQ_API_KEY"]
 
-# gemini-flash-latest auto-updates to Google's current stable Flash model,
-# so this shouldn't need updating every time Google retires a model version.
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-flash-latest")
+# openai/gpt-oss-120b is Groq's current recommended general-purpose model
+# (llama-3.3-70b-versatile, used previously, was deprecated by Groq).
+GROQ_MODEL = "openai/gpt-oss-120b"
+
+client = Groq(api_key=GROQ_API_KEY)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -105,33 +111,34 @@ to it naturally.
 
 
 # ---------------------------------------------------------------------------
-# Gemini call
+# Groq call
 # ---------------------------------------------------------------------------
 
 def generate_reply(topic_focus: str, history: list, user_message: str) -> str:
-    gemini_history = [
-        {"role": "user", "parts": [base_system_prompt(topic_focus)]},
-        {"role": "model", "parts": [f"Understood. I'm Jose — ready to talk about {topic_focus}."]},
-    ]
+    messages = [{"role": "system", "content": base_system_prompt(topic_focus)}]
     for role, content in history[-MAX_HISTORY_MESSAGES:]:
-        gemini_history.append({"role": role, "parts": [content]})
+        groq_role = "assistant" if role == "model" else "user"
+        messages.append({"role": groq_role, "content": content})
+    messages.append({"role": "user", "content": user_message})
 
-    # Free-tier APIs occasionally fail transiently (brief timeouts, rate
-    # limiting). Retry a couple of times with a short delay before giving up,
-    # so a single blip doesn't reach the user as an error.
+    # Retry a couple of times on transient errors before giving up, so a
+    # single blip doesn't reach the user as an error.
     last_error = None
     for attempt in range(3):
         try:
-            chat = model.start_chat(history=gemini_history)
-            response = chat.send_message(user_message)
-            return response.text.strip()
+            completion = client.chat.completions.create(
+                model=GROQ_MODEL,
+                messages=messages,
+                temperature=0.8,
+                max_tokens=400,
+            )
+            return completion.choices[0].message.content.strip()
         except Exception as e:
             last_error = e
             error_text = str(e).lower()
-            # Don't retry safety blocks — retrying won't change that outcome.
-            if "safety" in error_text or "blocked" in error_text or "finish_reason" in error_text:
+            if "content" in error_text and ("filter" in error_text or "moderation" in error_text):
                 raise
-            logger.warning("Gemini attempt %d failed: %s", attempt + 1, e)
+            logger.warning("Groq attempt %d failed: %s", attempt + 1, e)
             if attempt < 2:
                 time.sleep(1.5 * (attempt + 1))
 
@@ -179,7 +186,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     topic_key = context.user_data.get("topic")
 
     if not topic_key:
-        # No topic picked yet — nudge them to the menu instead of guessing.
         await update.message.reply_text(
             "Pick what this is about first, then tell me what's going on:",
             reply_markup=main_menu_keyboard(),
@@ -195,12 +201,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         reply = generate_reply(topic["focus"], history, user_message)
     except Exception as e:
-        logger.exception("Gemini generation failed")
-        # Gemini's safety filters can block a response outright for messages
-        # involving violence or self-harm. Give a direct, caring reply in
-        # that case instead of a generic "try again" — a vague error is the
-        # wrong thing to show someone who just typed something serious.
-        if "safety" in str(e).lower() or "blocked" in str(e).lower() or "finish_reason" in str(e).lower():
+        logger.exception("Groq generation failed")
+        error_text = str(e).lower()
+        if "content" in error_text and ("filter" in error_text or "moderation" in error_text):
             await update.message.reply_text(
                 "That sounds like a really heavy moment, and I want to take it "
                 "seriously rather than brush past it. If you or someone else "
@@ -234,7 +237,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Jose Alvarez bot (hybrid: menu + AI chat) starting...")
+    logger.info("Jose Alvarez bot (Groq version) starting...")
     app.run_polling()
 
 
