@@ -20,6 +20,7 @@ Deploy target: Railway
 
 import os
 import logging
+import time
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -115,9 +116,26 @@ def generate_reply(topic_focus: str, history: list, user_message: str) -> str:
     for role, content in history[-MAX_HISTORY_MESSAGES:]:
         gemini_history.append({"role": role, "parts": [content]})
 
-    chat = model.start_chat(history=gemini_history)
-    response = chat.send_message(user_message)
-    return response.text.strip()
+    # Free-tier APIs occasionally fail transiently (brief timeouts, rate
+    # limiting). Retry a couple of times with a short delay before giving up,
+    # so a single blip doesn't reach the user as an error.
+    last_error = None
+    for attempt in range(3):
+        try:
+            chat = model.start_chat(history=gemini_history)
+            response = chat.send_message(user_message)
+            return response.text.strip()
+        except Exception as e:
+            last_error = e
+            error_text = str(e).lower()
+            # Don't retry safety blocks — retrying won't change that outcome.
+            if "safety" in error_text or "blocked" in error_text or "finish_reason" in error_text:
+                raise
+            logger.warning("Gemini attempt %d failed: %s", attempt + 1, e)
+            if attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+
+    raise last_error
 
 
 # ---------------------------------------------------------------------------
@@ -176,12 +194,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         reply = generate_reply(topic["focus"], history, user_message)
-    except Exception:
+    except Exception as e:
         logger.exception("Gemini generation failed")
-        await update.message.reply_text(
-            "Sorry, I'm having trouble thinking that through right now — "
-            "give me a moment and try again?"
-        )
+        # Gemini's safety filters can block a response outright for messages
+        # involving violence or self-harm. Give a direct, caring reply in
+        # that case instead of a generic "try again" — a vague error is the
+        # wrong thing to show someone who just typed something serious.
+        if "safety" in str(e).lower() or "blocked" in str(e).lower() or "finish_reason" in str(e).lower():
+            await update.message.reply_text(
+                "That sounds like a really heavy moment, and I want to take it "
+                "seriously rather than brush past it. If you or someone else "
+                "could be in danger, please reach out to a trusted person or "
+                "local emergency/crisis service right now — not just me. "
+                "I'm still here if you want to talk through what's actually "
+                "going on."
+            )
+        else:
+            await update.message.reply_text(
+                "Sorry, I'm having trouble thinking that through right now — "
+                "give me a moment and try again?"
+            )
         return
 
     history.append(("user", user_message))
